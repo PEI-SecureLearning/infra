@@ -1,0 +1,87 @@
+name: Deploy GitHub Runner
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "terraform/**"
+      - "ansible/**"
+
+jobs:
+  deploy:
+    name: Provision VM and configure runner
+    runs-on: ubuntu-latest
+    environment: production
+
+    env:
+      # Non-sensitive — set as Actions Variables in the production environment
+      TF_VAR_proxmox_endpoint: ${{ vars.PROXMOX_ENDPOINT }}
+      TF_VAR_proxmox_node: ${{ vars.PROXMOX_NODE }}
+      TF_VAR_proxmox_datastore: ${{ vars.PROXMOX_DATASTORE }}
+      TF_VAR_proxmox_bridge: ${{ vars.PROXMOX_BRIDGE }}
+      TF_VAR_proxmox_template_vm_id: ${{ vars.PROXMOX_TEMPLATE_VM_ID }}
+      TF_VAR_vm_name: ${{ vars.VM_NAME }}
+      TF_VAR_vm_ip_cidr: ${{ vars.VM_IP_CIDR }}
+      TF_VAR_vm_gateway: ${{ vars.VM_GATEWAY }}
+      # Sensitive — set as Actions Secrets in the production environment
+      TF_VAR_proxmox_api_token_id: ${{ secrets.PROXMOX_API_TOKEN_ID }}
+      TF_VAR_proxmox_api_token_secret: ${{ secrets.PROXMOX_API_TOKEN_SECRET }}
+      TF_VAR_vm_ssh_public_key: ${{ secrets.VM_SSH_PUBLIC_KEY }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_wrapper: false
+
+      - name: Terraform init
+        working-directory: terraform
+        run: terraform init
+
+      - name: Terraform apply
+        working-directory: terraform
+        run: terraform apply -auto-approve
+
+      - name: Capture VM IP
+        id: tf_output
+        working-directory: terraform
+        run: |
+          VM_IP=$(terraform output -raw vm_ipv4_address)
+          echo "vm_ip=${VM_IP}" >> "$GITHUB_OUTPUT"
+
+      - name: Write Ansible inventory
+        run: |
+          printf '[runners]\n%s\n' "${{ steps.tf_output.outputs.vm_ip }}" > ansible/inventory.ini
+
+      - name: Setup SSH key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.VM_SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+
+      - name: Wait for SSH
+        run: |
+          for i in $(seq 1 30); do
+            ssh -o StrictHostKeyChecking=no -o ConnectTimeout=5 \
+              debian@${{ steps.tf_output.outputs.vm_ip }} true && break
+            echo "Attempt $i failed, retrying..."
+            sleep 10
+          done
+
+      - name: Install Ansible
+        run: pip install ansible
+
+      - name: Run Ansible playbook
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          ANSIBLE_HOST_KEY_CHECKING: "False"
+        run: |
+          ansible-playbook \
+            -i ansible/inventory.ini \
+            ansible/playbooks/github-runner.yml \
+            --private-key ~/.ssh/id_rsa \
+            --extra-vars "gh_org=${{ github.repository_owner }} gh_token=${GH_TOKEN}"

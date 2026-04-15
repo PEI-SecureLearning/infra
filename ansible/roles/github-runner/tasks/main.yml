@@ -1,0 +1,137 @@
+---
+- name: Install dependencies
+  ansible.builtin.apt:
+    name:
+      - curl
+      - jq
+      - git
+      - libicu72
+      - ca-certificates
+      - gnupg
+    state: present
+    update_cache: true
+
+- name: Add Docker GPG key
+  ansible.builtin.apt_key:
+    url: https://download.docker.com/linux/debian/gpg
+    keyring: /etc/apt/keyrings/docker.gpg
+    state: present
+
+- name: Add Docker apt repository
+  ansible.builtin.apt_repository:
+    repo: >-
+      deb [arch=amd64 signed-by=/etc/apt/keyrings/docker.gpg]
+      https://download.docker.com/linux/debian
+      {{ ansible_distribution_release }} stable
+    filename: docker
+    state: present
+
+- name: Install Docker engine, Compose plugin, and Buildx plugin
+  ansible.builtin.apt:
+    name:
+      - docker-ce
+      - docker-ce-cli
+      - containerd.io
+      - docker-buildx-plugin
+      - docker-compose-plugin
+    state: present
+    update_cache: true
+
+- name: Enable and start Docker service
+  ansible.builtin.systemd:
+    name: docker
+    enabled: true
+    state: started
+
+- name: Create runner user
+  ansible.builtin.user:
+    name: "{{ runner_user }}"
+    system: true
+    create_home: false
+    shell: /bin/bash
+    groups: docker
+    append: true
+
+- name: Create runner directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ runner_user }}"
+    group: "{{ runner_user }}"
+    mode: "0755"
+  loop:
+    - "{{ runner_dir }}"
+    - "{{ runner_work_dir }}"
+
+- name: Fetch latest runner version
+  ansible.builtin.uri:
+    url: https://api.github.com/repos/actions/runner/releases/latest
+    headers:
+      Authorization: "Bearer {{ gh_token }}"
+      Accept: application/vnd.github+json
+    return_content: true
+  register: runner_release
+
+- name: Set runner version fact
+  ansible.builtin.set_fact:
+    runner_version: "{{ runner_release.json.tag_name | regex_replace('^v', '') }}"
+
+- name: Download runner archive
+  ansible.builtin.get_url:
+    url: "https://github.com/actions/runner/releases/download/v{{ runner_version }}/actions-runner-linux-x64-{{ runner_version }}.tar.gz"
+    dest: "/tmp/actions-runner.tar.gz"
+    mode: "0644"
+
+- name: Extract runner archive
+  ansible.builtin.unarchive:
+    src: /tmp/actions-runner.tar.gz
+    dest: "{{ runner_dir }}"
+    remote_src: true
+    owner: "{{ runner_user }}"
+    group: "{{ runner_user }}"
+
+- name: Request runner registration token
+  ansible.builtin.uri:
+    url: "https://api.github.com/orgs/{{ gh_org }}/actions/runners/registration-token"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ gh_token }}"
+      Accept: application/vnd.github+json
+    status_code: 201
+    return_content: true
+  register: reg_token_response
+  no_log: true
+
+- name: Configure runner
+  ansible.builtin.command:
+    cmd: >
+      ./config.sh
+      --url https://github.com/{{ gh_org }}
+      --token {{ reg_token_response.json.token }}
+      --name {{ inventory_hostname }}
+      --labels {{ runner_labels }}
+      --work {{ runner_work_dir }}
+      --unattended
+      --replace
+    chdir: "{{ runner_dir }}"
+  become: true
+  become_user: "{{ runner_user }}"
+  no_log: true
+
+- name: Install runner as systemd service
+  ansible.builtin.command:
+    cmd: ./svc.sh install {{ runner_user }}
+    chdir: "{{ runner_dir }}"
+  become: true
+
+- name: Start runner service
+  ansible.builtin.command:
+    cmd: ./svc.sh start
+    chdir: "{{ runner_dir }}"
+  become: true
+
+- name: Verify runner service is active
+  ansible.builtin.systemd:
+    name: "actions.runner.*"
+  register: runner_svc
+  failed_when: false

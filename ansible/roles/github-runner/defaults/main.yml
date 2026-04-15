@@ -1,0 +1,5 @@
+---
+runner_user: github-runner
+runner_dir: /opt/github-runner
+runner_labels: "self-hosted,linux,x64"
+runner_work_dir: /opt/github-runner/_work

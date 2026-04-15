@@ -1,0 +1,13 @@
+---
+- name: Configure GitHub Actions org runner
+  hosts: runners
+  become: true
+  gather_facts: true
+
+  vars:
+    # gh_org and gh_token are passed via --extra-vars from the workflow
+    ansible_user: debian
+    ansible_ssh_common_args: "-o StrictHostKeyChecking=no"
+
+  roles:
+    - github-runner
