@@ -20,7 +20,6 @@ jobs:
       TF_VAR_proxmox_node: ${{ vars.PROXMOX_NODE }}
       TF_VAR_proxmox_datastore: ${{ vars.PROXMOX_DATASTORE }}
       TF_VAR_proxmox_bridge: ${{ vars.PROXMOX_BRIDGE }}
-      TF_VAR_proxmox_template_vm_id: ${{ vars.PROXMOX_TEMPLATE_VM_ID }}
       TF_VAR_vm_name: ${{ vars.VM_NAME }}
       TF_VAR_vm_ip_cidr: ${{ vars.VM_IP_CIDR }}
       TF_VAR_vm_gateway: ${{ vars.VM_GATEWAY }}

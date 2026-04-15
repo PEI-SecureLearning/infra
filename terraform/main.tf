@@ -1,11 +1,16 @@
+resource "proxmox_virtual_environment_download_file" "debian12" {
+  content_type = "iso"
+  datastore_id = var.proxmox_image_datastore
+  node_name    = var.proxmox_node
+  url          = "https://cloud.debian.org/images/cloud/bookworm/latest/debian-12-generic-amd64.qcow2"
+  file_name    = "debian-12-generic-amd64.img"
+
+  overwrite = false
+}
+
 resource "proxmox_virtual_environment_vm" "runner" {
   name      = var.vm_name
   node_name = var.proxmox_node
-
-  clone {
-    vm_id = var.proxmox_template_vm_id
-    full  = true
-  }
 
   cpu {
     cores = 2
@@ -18,6 +23,7 @@ resource "proxmox_virtual_environment_vm" "runner" {
 
   disk {
     datastore_id = var.proxmox_datastore
+    file_id      = proxmox_virtual_environment_download_file.debian12.id
     interface    = "scsi0"
     discard      = "on"
     size         = 20

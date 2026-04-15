@@ -1,5 +1,5 @@
 variable "proxmox_endpoint" {
-  description = "Proxmox VE API URL (e.g. https://pve.local:8006)"
+  description = "Proxmox VE API URL (e.g. https://pve.securelearning.pt:8006)"
   type        = string
 }
 
@@ -25,15 +25,16 @@ variable "proxmox_datastore" {
   type        = string
 }
 
+variable "proxmox_image_datastore" {
+  description = "Directory-based storage for downloading cloud images (must support iso content type, e.g. local)"
+  type        = string
+  default     = "local"
+}
+
 variable "proxmox_bridge" {
   description = "Network bridge for the VM NIC (e.g. vmbr0)"
   type        = string
   default     = "vmbr0"
-}
-
-variable "proxmox_template_vm_id" {
-  description = "VM ID of the Debian 12 cloud-init template to clone"
-  type        = number
 }
 
 variable "vm_name" {
@@ -43,7 +44,7 @@ variable "vm_name" {
 }
 
 variable "vm_ip_cidr" {
-  description = "Static IP address with prefix length (e.g. 192.168.1.50/24)"
+  description = "Static IP address with prefix length (e.g. 192.168.1.210/24)"
   type        = string
 }
 
