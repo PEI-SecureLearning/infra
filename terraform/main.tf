@@ -5,7 +5,7 @@ resource "proxmox_download_file" "debian12" {
   url          = "https://laotzu.ftp.acc.umu.se/images/cloud/bookworm/latest/debian-12-generic-amd64.qcow2"
   file_name    = "debian-12-generic-amd64.img"
 
-  overwrite = false
+  overwrite = true
 }
 
 resource "proxmox_virtual_environment_vm" "runner" {
