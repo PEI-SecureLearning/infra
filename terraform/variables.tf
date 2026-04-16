@@ -15,6 +15,23 @@ variable "proxmox_api_token_secret" {
   sensitive   = true
 }
 
+variable "proxmox_ssh_username" {
+  description = "SSH username for PVE node (used by provider for disk import operations)"
+  type        = string
+  default     = "root"
+}
+
+variable "proxmox_ssh_host" {
+  description = "Hostname/IP for SSH to PVE node (may differ from API endpoint, e.g. public DNS with port forward)"
+  type        = string
+}
+
+variable "proxmox_ssh_port" {
+  description = "SSH port for PVE node (e.g. 2222 if port-forwarded)"
+  type        = number
+  default     = 22
+}
+
 variable "proxmox_node" {
   description = "Proxmox node name to deploy the VM on"
   type        = string

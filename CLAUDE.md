@@ -4,23 +4,23 @@ Context for working in this repo.
 
 ## Purpose
 
-Provisions a Proxmox VM and configures it as a GitHub Actions org-level self-hosted runner for the `PEI-SecureLearning` organization. The runner is intended as the production deployment target — Docker and Docker Compose/Buildx are installed on it.
+Provisions Proxmox VM, configures as GitHub Actions org-level self-hosted runner for `PEI-SecureLearning`. Runner = production deploy target — Docker + Docker Compose/Buildx installed.
 
 ## Stack
 
 - Terraform (`bpg/proxmox` provider ~> 0.69) — VM lifecycle
-- Ansible — post-provision configuration (runner + Docker)
+- Ansible — post-provision config (runner + Docker)
 - GitHub Actions — orchestration (`environment: production`)
 
 ## Key design decisions
 
 - **Proxmox auth**: API token only (not username/password). Format passed to provider: `TOKEN_ID=TOKEN_SECRET`.
-- **Org name**: derived from `github.repository_owner` in the workflow — never hardcoded or stored as a variable.
-- **Vars vs secrets**: non-sensitive Proxmox and VM config live as GitHub Actions Variables (`vars.*`); credentials live as Secrets (`secrets.*`). Both scoped to the `production` environment.
-- **No home dir for runner user**: `github-runner` is a system user with no home directory. Runner files live at `/opt/github-runner`, work dir at `/opt/github-runner/_work`.
-- **Docker**: installed from the official Docker apt repo (not Debian's distro packages — too old). `github-runner` user is in the `docker` group so CI jobs run Docker without sudo.
-- **Static IP**: VM uses cloud-init static IP (`VM_IP_CIDR` + `VM_GATEWAY`). The output `vm_ipv4_address` strips the prefix from the CIDR rather than relying on the QEMU guest agent to report it.
-- **VM template**: Debian 12 cloud-init clone. Template must have `qemu-guest-agent` installed. Cloud-init user is `debian`.
+- **Org name**: derived from `github.repository_owner` in workflow — never hardcoded or stored as variable.
+- **Vars vs secrets**: non-sensitive Proxmox/VM config = GitHub Actions Variables (`vars.*`); credentials = Secrets (`secrets.*`). Both scoped to `production` environment.
+- **No home dir for runner user**: `github-runner` = system user, no home dir. Runner files at `/opt/github-runner`, work dir at `/opt/github-runner/_work`.
+- **Docker**: installed from official Docker apt repo (not Debian distro packages — too old). `github-runner` user in `docker` group so CI jobs run Docker without sudo.
+- **Static IP**: VM uses cloud-init static IP (`VM_IP_CIDR` + `VM_GATEWAY`). Output `vm_ipv4_address` strips prefix from CIDR, not QEMU guest agent.
+- **VM template**: Debian 12 cloud-init clone. Template needs `qemu-guest-agent`. Cloud-init user is `debian`.
 
 ## File map
 
@@ -37,28 +37,28 @@ Provisions a Proxmox VM and configures it as a GitHub Actions org-level self-hos
 
 ## Adding or changing variables
 
-- Non-sensitive config (endpoints, node names, IPs): add to `terraform/variables.tf` + expose via `vars.*` in the workflow env block.
-- Sensitive values: add to `terraform/variables.tf` with `sensitive = true` + expose via `secrets.*` in the workflow.
+- Non-sensitive config (endpoints, node names, IPs): add to `terraform/variables.tf` + expose via `vars.*` in workflow env block.
+- Sensitive values: add to `terraform/variables.tf` with `sensitive = true` + expose via `secrets.*` in workflow.
 - Always update README.md variable tables when adding new inputs.
 
 ## Terraform state
 
-Currently local. If remote state is needed, add a `backend` block to `terraform/versions.tf` and configure credentials separately (do not commit backend credentials).
+Currently local. If remote state needed, add `backend` block to `terraform/versions.tf` + configure credentials separately (never commit backend credentials).
 
 ## GitHub environment
 
-The workflow runs under the `production` environment. All variables and secrets must be set there, not at the repository level, to benefit from environment protection rules.
+Workflow runs under `production` environment. All variables + secrets must be set there, not repo level — needed for environment protection rules.
 
 ## Common tasks
 
-**Re-run the deploy without code changes:**
-Trigger manually from Actions → Deploy GitHub Runner → Run workflow.
+**Re-run deploy without code changes:**
+Trigger manually: Actions → Deploy GitHub Runner → Run workflow.
 
 **Change VM specs:**
-Edit `terraform/main.tf` — `cpu.cores` and `memory.dedicated`. Re-run the workflow; Terraform will update in-place where Proxmox supports it.
+Edit `terraform/main.tf` — `cpu.cores` and `memory.dedicated`. Re-run workflow; Terraform updates in-place where Proxmox supports.
 
 **Change runner labels:**
-Edit `runner_labels` in `ansible/roles/github-runner/defaults/main.yml`. Re-run the workflow; Ansible will re-configure the runner (`--replace` flag handles re-registration).
+Edit `runner_labels` in `ansible/roles/github-runner/defaults/main.yml`. Re-run workflow; Ansible re-configures runner (`--replace` handles re-registration).
 
-**Add more software to the VM:**
-Add tasks to `ansible/roles/github-runner/tasks/main.yml`. Keep Docker-related tasks grouped near the top before the runner user is created.
+**Add software to VM:**
+Add tasks to `ansible/roles/github-runner/tasks/main.yml`. Keep Docker tasks grouped near top before runner user created.

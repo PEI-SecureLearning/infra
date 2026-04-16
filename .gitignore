@@ -1,0 +1,13 @@
+# Local secrets — never commit
+.vars
+
+# Terraform
+.terraform/
+.terraform.lock.hcl
+terraform.tfstate
+terraform.tfstate.backup
+*.tfvars
+*.tfvars.json
+
+# Ansible
+ansible/inventory.ini

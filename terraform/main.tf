@@ -1,8 +1,8 @@
-resource "proxmox_virtual_environment_download_file" "debian12" {
+resource "proxmox_download_file" "debian12" {
   content_type = "iso"
   datastore_id = var.proxmox_image_datastore
   node_name    = var.proxmox_node
-  url          = "https://cloud.debian.org/images/cloud/bookworm/latest/debian-12-generic-amd64.qcow2"
+  url          = "https://laotzu.ftp.acc.umu.se/images/cloud/bookworm/latest/debian-12-generic-amd64.qcow2"
   file_name    = "debian-12-generic-amd64.img"
 
   overwrite = false
@@ -23,7 +23,7 @@ resource "proxmox_virtual_environment_vm" "runner" {
 
   disk {
     datastore_id = var.proxmox_datastore
-    file_id      = proxmox_virtual_environment_download_file.debian12.id
+    file_id      = proxmox_download_file.debian12.id
     interface    = "scsi0"
     discard      = "on"
     size         = 20
@@ -35,6 +35,8 @@ resource "proxmox_virtual_environment_vm" "runner" {
   }
 
   initialization {
+    datastore_id = var.proxmox_datastore
+
     ip_config {
       ipv4 {
         address = var.vm_ip_cidr

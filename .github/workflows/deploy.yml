@@ -9,13 +9,16 @@ on:
       - "ansible/**"
 
 jobs:
-  deploy:
-    name: Provision VM and configure runner
+  terraform:
+    name: Provision VM
     runs-on: ubuntu-latest
     environment: production
 
+    outputs:
+      vm_ip: ${{ steps.tf_output.outputs.vm_ip }}
+
     env:
-      # Non-sensitive — set as Actions Variables in the production environment
+      # Non-sensitive — Actions Variables in the production environment
       TF_VAR_proxmox_endpoint: ${{ vars.PROXMOX_ENDPOINT }}
       TF_VAR_proxmox_node: ${{ vars.PROXMOX_NODE }}
       TF_VAR_proxmox_datastore: ${{ vars.PROXMOX_DATASTORE }}
@@ -23,7 +26,9 @@ jobs:
       TF_VAR_vm_name: ${{ vars.VM_NAME }}
       TF_VAR_vm_ip_cidr: ${{ vars.VM_IP_CIDR }}
       TF_VAR_vm_gateway: ${{ vars.VM_GATEWAY }}
-      # Sensitive — set as Actions Secrets in the production environment
+      TF_VAR_proxmox_ssh_host: ${{ vars.PVE_SSH_HOST }}
+      TF_VAR_proxmox_ssh_port: ${{ vars.PVE_SSH_PORT }}
+      # Sensitive — Actions Secrets in the production environment
       TF_VAR_proxmox_api_token_id: ${{ secrets.PROXMOX_API_TOKEN_ID }}
       TF_VAR_proxmox_api_token_secret: ${{ secrets.PROXMOX_API_TOKEN_SECRET }}
       TF_VAR_vm_ssh_public_key: ${{ secrets.VM_SSH_PUBLIC_KEY }}
@@ -31,6 +36,15 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Setup SSH agent (PVE root key for disk import)
+        run: |
+          mkdir -p ~/.ssh
+          eval "$(ssh-agent -s)"
+          echo "${{ secrets.PVE_SSH_PRIVATE_KEY }}" | ssh-add -
+          ssh-keyscan -p ${{ vars.PVE_SSH_PORT }} -H ${{ vars.PVE_SSH_HOST }} >> ~/.ssh/known_hosts
+          echo "SSH_AUTH_SOCK=$SSH_AUTH_SOCK" >> $GITHUB_ENV
+          echo "SSH_AGENT_PID=$SSH_AGENT_PID" >> $GITHUB_ENV
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
@@ -52,21 +66,39 @@ jobs:
           VM_IP=$(terraform output -raw vm_ipv4_address)
           echo "vm_ip=${VM_IP}" >> "$GITHUB_OUTPUT"
 
-      - name: Write Ansible inventory
-        run: |
-          printf '[runners]\n%s\n' "${{ steps.tf_output.outputs.vm_ip }}" > ansible/inventory.ini
+  ansible:
+    name: Configure runner
+    runs-on: ubuntu-latest
+    environment: production
+    needs: terraform
 
-      - name: Setup SSH key
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup SSH agent
         run: |
           mkdir -p ~/.ssh
-          echo "${{ secrets.VM_SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
-          chmod 600 ~/.ssh/id_rsa
+          eval "$(ssh-agent -s)"
+          echo "${{ secrets.PVE_SSH_PRIVATE_KEY }}" | ssh-add -
+          echo "${{ secrets.VM_SSH_PRIVATE_KEY }}" | ssh-add -
+          ssh-keyscan -p ${{ vars.PVE_SSH_PORT }} -H ${{ vars.PVE_SSH_HOST }} >> ~/.ssh/known_hosts
+          echo "SSH_AUTH_SOCK=$SSH_AUTH_SOCK" >> $GITHUB_ENV
+          echo "SSH_AGENT_PID=$SSH_AGENT_PID" >> $GITHUB_ENV
 
-      - name: Wait for SSH
+      - name: Write Ansible inventory
+        run: |
+          printf '[runners]\n%s ansible_ssh_common_args="-o ProxyJump=root@%s:%s -o StrictHostKeyChecking=no"\n' \
+            "${{ needs.terraform.outputs.vm_ip }}" \
+            "${{ vars.PVE_SSH_HOST }}" \
+            "${{ vars.PVE_SSH_PORT }}" > ansible/inventory.ini
+
+      - name: Wait for SSH via PVE jump host
         run: |
           for i in $(seq 1 30); do
             ssh -o StrictHostKeyChecking=no -o ConnectTimeout=5 \
-              debian@${{ steps.tf_output.outputs.vm_ip }} true && break
+              -J root@${{ vars.PVE_SSH_HOST }}:${{ vars.PVE_SSH_PORT }} \
+              debian@${{ needs.terraform.outputs.vm_ip }} true && break
             echo "Attempt $i failed, retrying..."
             sleep 10
           done
@@ -82,5 +114,4 @@ jobs:
           ansible-playbook \
             -i ansible/inventory.ini \
             ansible/playbooks/github-runner.yml \
-            --private-key ~/.ssh/id_rsa \
             --extra-vars "gh_org=${{ github.repository_owner }} gh_token=${GH_TOKEN}"
